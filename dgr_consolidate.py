@@ -593,3 +593,4 @@ def consolidate():
 
     print('DGR Consolidated Successfully')
     print('-----------------------------', end='\n\n')
+ 

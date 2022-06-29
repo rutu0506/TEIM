@@ -59,7 +59,7 @@ def log_files(input_path):
 
 
 def cleanup(input_path):
-    destination = 'E:/SDA/Done DGR/'
+    destination = 'E:/SDA/DGR/'
     clients = ['INOX', 'REGEN', 'SENVION', 'SUZLON', 'TS WIND', 'WIND WORLD']
 
     for client in clients:

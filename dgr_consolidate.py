@@ -89,6 +89,14 @@ def timestamp_to_hours2(sheet, column):
     return sheet
 
 
+def add_time(time1, time2):
+    l1 = list(map(int, time1.split(':')))
+    l2 = list(map(int, time2.split(':')))
+    minutes = (l1[1] + l2[1]) % 60
+    hours = l1[0] + l2[0] + int((l1[1] + l2[1]) / 60)
+    return str(hours) + ':' + str(minutes)
+
+
 def get_inox_data(gen_data, bd_data):
     input_path = 'E:/SDA/Input DGR/INOX/'
 
@@ -444,6 +452,8 @@ def get_tswind_data(gen_data, bd_data):
         sheet = timestamp_to_hours(sheet, 'FM.', 'force_majeure')
         sheet = timestamp_to_hours(sheet, 'MAINT.', 'scheduled_services')
         sheet = timestamp_to_hours(sheet, 'ERROR', 'unscheduled_services')
+        sheet['breakdown_hours'] = sheet['grid_failure'] + sheet['force_majeure'] + sheet['scheduled_services'] + sheet[
+            'unscheduled_services']
 
         sheet = sheet.reset_index().rename(columns={'CUSTOMER': 'customer_name', 'SITE': 'site_name',
                                                     'WTG': 'wind_turbine_location_number',
@@ -458,7 +468,7 @@ def get_tswind_data(gen_data, bd_data):
                             'grid_failure', 'force_majeure', 'scheduled_services', 'unscheduled_services']]
 
         breakdown = sheet[['date', 'financial_year', 'customer_name', 'client_name',
-                           'site_name', 'wind_turbine_location_number', 'breakdown_remark']]
+                           'site_name', 'wind_turbine_location_number', 'breakdown_remark', 'breakdown_hours']]
 
         breakdown.dropna(inplace=True)
 
@@ -493,40 +503,59 @@ def get_windworld_data(gen_data, bd_data):
 
         bd_factors = {'BM': 'unscheduled_services', 'BD': 'unscheduled_services', 'GF': 'grid_failure',
                       'GS': 'grid_failure', 'PM': 'scheduled_services', 'SD': 'scheduled_services',
-                      'FM': 'force_majeure', 'CS': 'grid_failure', 'LR': 'grid_failure', 'S/D': 'grid_failure'}
+                      'FM': 'force_majeure', 'CS': 'grid_failure', 'LR': 'grid_failure', 'RF': 'force_majeure'}
+
+        factors = ('BM', 'BD', 'GF', 'GS', 'PM', 'SD', 'FM', 'CS', 'LR', 'S/D', 'STS', 'RF')
 
         sheet['grid_failure'] = ['00:00'] * len(sheet)
         sheet['force_majeure'] = ['00:00'] * len(sheet)
         sheet['scheduled_services'] = ['00:00'] * len(sheet)
         sheet['unscheduled_services'] = ['00:00'] * len(sheet)
+        sheet['breakdown_hours'] = ['00:00'] * len(sheet)
 
         sheet.fillna('', inplace=True)
 
         for x in range(len(sheet)):
             remark = sheet.loc[x, 'REMARKS']
-            if not remark == '' and not remark[:1].isdigit():
-                index = remark.lower().find('hrs')
-                time_str = remark[index-6:index]
-                time_str = time_str.replace('.', ':')
-                i = time_str.find(':')
-                if i == -1:
-                    time = time_str.strip()[-2:] + ':00'
-                elif time_str[i - 2:i].isnumeric():
-                    time = time_str[i - 2:i + 3]
-                else:
-                    time = time_str[i - 1:i + 3]
-
-                if remark[:3] == 'STS':
-                    sheet.loc[x, 'force_majeure'] = time
-                elif remark[:3] == 'S/D':
-                    sheet.loc[x, 'grid_failure'] = time
-                else:
-                    sheet.loc[x, bd_factors[remark[:2]]] = time
+            count = remark.lower().count('hrs')
+            if count > 0:
+                for z in range(count):
+                    index = remark.lower().find('hrs')
+                    time_str = remark[index - 6:index]
+                    time_str = time_str.replace('.', ':')
+                    i = time_str.find(':')
+                    if i == -1:
+                        time = time_str.strip()[-2:] + ':00'
+                    elif time_str[i - 2:i].isnumeric():
+                        time = time_str[i - 2:i + 3]
+                    else:
+                        time = time_str[i - 1:i + 3]
+                    if z == 0 and not remark[:1].isdigit():
+                        sheet.loc[x, 'breakdown_hours'] = add_time(sheet.loc[x, 'breakdown_hours'], time)
+                        if remark[:3] == 'STS':
+                            sheet.loc[x, 'force_majeure'] = add_time(sheet.loc[x, 'force_majeure'], time)
+                        elif remark[:3] == 'S/D':
+                            sheet.loc[x, 'grid_failure'] = add_time(sheet.loc[x, 'grid_failure'], time)
+                        else:
+                            sheet.loc[x, bd_factors[remark[:2]]] = add_time(sheet.loc[x, bd_factors[remark[:2]]], time)
+                    else:
+                        for f in factors:
+                            if remark.find(f + ' -') != -1 or remark.find(f + '-') != -1:
+                                sheet.loc[x, 'breakdown_hours'] = add_time(sheet.loc[x, 'breakdown_hours'], time)
+                                if f == 'STS':
+                                    sheet.loc[x, 'force_majeure'] = add_time(sheet.loc[x, 'force_majeure'], time)
+                                elif f == 'S/D':
+                                    sheet.loc[x, 'grid_failure'] = add_time(sheet.loc[x, 'grid_failure'], time)
+                                else:
+                                    sheet.loc[x, bd_factors[f]] = add_time(sheet.loc[x, bd_factors[f]], time)
+                                break
+                    remark = remark[index + 3:]
 
         sheet = timestamp_to_hours2(sheet, 'grid_failure')
         sheet = timestamp_to_hours2(sheet, 'force_majeure')
         sheet = timestamp_to_hours2(sheet, 'scheduled_services')
         sheet = timestamp_to_hours2(sheet, 'unscheduled_services')
+        sheet = timestamp_to_hours2(sheet, 'breakdown_hours')
 
         sheet = sheet.reset_index().rename(columns={'Customer': 'customer_name',
                                                     'STATE ': 'state', 'SITE': 'site_name',
@@ -545,7 +574,7 @@ def get_windworld_data(gen_data, bd_data):
 
         breakdown = sheet[['date', 'financial_year', 'customer_name', 'client_name',
                            'state', 'site_name', 'wind_turbine_location_number',
-                           'breakdown_remark']]
+                           'breakdown_remark', 'breakdown_hours']]
 
         breakdown = breakdown[breakdown['breakdown_remark'] != '']
 
